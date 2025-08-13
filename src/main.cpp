@@ -15,31 +15,27 @@ MAPEAMENTO CONTROLE HEX
 
 //-------------------- PINOS --------------------
 #define BUZZER_PIN 2
-
-// --- ALTERAÇÃO: Pinos para o módulo de controle externo (NE555) ---
-#define MOTOR_PWM_PIN 5  // Pino PWM para o sinal de velocidade
-#define MOTOR_DIR_PIN 4  // Pino digital para o sinal de direção
-
-// --- REMOVIDO: Pinos antigos do driver Ponte H ---
-// const int RPWM = 5;
-// const int LPWM = 6;
-// const int L_EN = 9;
-// const int R_EN = 10;
+#define MOTOR_PWM_PIN     5  // Pino PWM para o sinal de velocidade
+#define MOTOR_DIR_FRENTE  4  // Pino digital para o sinal de direção FRENTE
+#define MOTOR_DIR_RE      7  // Pino digital para o sinal de direção RÉ
 
 //-------------------- VARIÁVEIS --------------------
 int status = 0;         // 0 Desligado - 1 Ligado
-int velocidade = 0;     // ALTERAÇÃO: Agora em porcentagem (0-100)
-int direcao = 0;        // 0 Frente - 1 Ré (pode ser necessário inverter dependendo do seu módulo)
+int velocidade = 0;     // 0-100 %
+int direcao = 0;        // 0 Frente - 1 Ré
 int motordirecao = 0;   // 0 parado / 1 direita / 2 esquerda
 
-// controle de “segurar botão”: atualiza enquanto chegam repetições
+// Controle de “segurar botão”: atualiza enquanto chegam repetições
 unsigned long lastDirSignalMillis = 0;
 const unsigned long DIR_RELEASE_TIMEOUT = 150; // ms sem repetição = botão solto
 
-//-------------------- CLASSE MOTOR DIREÇÃO (sem alterações) --------------------
+// Controle de tempo mínimo entre trocas de direção
+unsigned long lastDirectionChangeMillis = 0;
+const unsigned long DIRECTION_CHANGE_DELAY = 500; // tempo mínimo entre trocas (ms)
+
+//-------------------- CLASSE MOTOR DIREÇÃO --------------------
 class DCMotor {
   int spd = 130, pin1, pin2;
-
 public:
   void Pinout(int in1, int in2) {
     pin1 = in1;
@@ -63,47 +59,59 @@ public:
 };
 DCMotor Motor1;
 
-//-------------------- FUNÇÕES AUXILIARES (REESCRITAS) --------------------
-// Mantida, pois a frequência do Timer 0 (que afeta o pino 5) ainda é útil.
+//-------------------- FUNÇÕES AUXILIARES --------------------
 void setPWMfrequency(int freq) {
   TCCR0B = TCCR0B & 0b11111000 | freq;
 }
 
-// NOVA FUNÇÃO: Controla o motor com base na porcentagem e direção.
+// Controla motor principal (com trava de segurança)
 void controleMotor(int percentVelocidade, int direcaoMotor) {
-  // Garante que a velocidade esteja nos limites de 0-100
   percentVelocidade = constrain(percentVelocidade, 0, 100);
-  
-  // Define a direção do motor
-  // NOTA: você talvez precise trocar HIGH por LOW dependendo de como seu módulo interpreta o sinal
-  digitalWrite(MOTOR_DIR_PIN, direcaoMotor == 0 ? LOW : HIGH); 
 
-  // Mapeia a porcentagem (0-100) para o valor PWM (0-255)
+  if (percentVelocidade == 0) {
+    digitalWrite(MOTOR_DIR_FRENTE, LOW);
+    digitalWrite(MOTOR_DIR_RE, LOW);
+  } 
+  else if (direcaoMotor == 0) { // Frente
+    digitalWrite(MOTOR_DIR_FRENTE, HIGH);
+    digitalWrite(MOTOR_DIR_RE, LOW);
+  } 
+  else { // Ré
+    digitalWrite(MOTOR_DIR_FRENTE, LOW);
+    digitalWrite(MOTOR_DIR_RE, HIGH);
+  }
+
   byte pwmValor = map(percentVelocidade, 0, 100, 0, 255);
-
-  // Envia o pulso PWM para o pino de controle de velocidade
   analogWrite(MOTOR_PWM_PIN, pwmValor);
 }
 
-// NOVA FUNÇÃO: Para o motor de forma simples.
-void paraMotor() {
-  controleMotor(0, direcao); // Apenas seta a velocidade para 0, mantendo a direção atual
+// Para motor com pausa de segurança
+void pararComSeguranca() {
+  controleMotor(0, direcao);
+  delay(1500); // Pausa física para proteger
+  lastDirectionChangeMillis = millis();
 }
 
+void paraMotor() {
+  controleMotor(0, direcao);
+}
 
-//-------------------- FUNÇÃO BIP (sem alterações) --------------------
+//-------------------- FUNÇÃO BIP --------------------
 void bip(int tp) {
-  // ... (código da função bip permanece o mesmo)
   switch (tp) {
-    case 1: analogWrite(BUZZER_PIN, 255); delay(2500); analogWrite(BUZZER_PIN, 0);   delay(700); analogWrite(BUZZER_PIN, 255); delay(700); analogWrite(BUZZER_PIN, 0);   delay(700); analogWrite(BUZZER_PIN, 255); delay(700); analogWrite(BUZZER_PIN, 0); break;
+    case 1: analogWrite(BUZZER_PIN, 255); delay(2500); analogWrite(BUZZER_PIN, 0); delay(700);
+            analogWrite(BUZZER_PIN, 255); delay(700); analogWrite(BUZZER_PIN, 0); delay(700);
+            analogWrite(BUZZER_PIN, 255); delay(700); analogWrite(BUZZER_PIN, 0); break;
     case 2: analogWrite(BUZZER_PIN, 255); delay(4000); analogWrite(BUZZER_PIN, 0); break;
-    case 3: analogWrite(BUZZER_PIN, 255); delay(800); analogWrite(BUZZER_PIN, 0);   delay(400); analogWrite(BUZZER_PIN, 255); delay(800); analogWrite(BUZZER_PIN, 0); break;
-    case 4: for (int i = 0; i < 3; i++) { analogWrite(BUZZER_PIN, 255); delay(400); analogWrite(BUZZER_PIN, 0);   delay(400); } break;
+    case 3: analogWrite(BUZZER_PIN, 255); delay(800); analogWrite(BUZZER_PIN, 0); delay(400);
+            analogWrite(BUZZER_PIN, 255); delay(800); analogWrite(BUZZER_PIN, 0); break;
+    case 4: for (int i = 0; i < 3; i++) { analogWrite(BUZZER_PIN, 255); delay(400);
+            analogWrite(BUZZER_PIN, 0); delay(400); } break;
     case 5: analogWrite(BUZZER_PIN, 255); delay(500); analogWrite(BUZZER_PIN, 0); break;
   }
 }
 
-//-------------------- FUNÇÃO DE PROCESSAMENTO DE COMANDOS (ATUALIZADA) --------------------
+//-------------------- PROCESSAMENTO COMANDOS --------------------
 void processCommand(uint32_t code, bool isRepeat) {
   if (isRepeat) {
     if (motordirecao != 0) {
@@ -113,17 +121,14 @@ void processCommand(uint32_t code, bool isRepeat) {
   }
 
   switch (code) {
-    // Botao Desligar/Liga
-    case 0xE51A52AD:
+    case 0xE51A52AD: // Liga/Desliga
       if (status == 0) {
-        Serial.println("Ligado");
         bip(1);
         status = 1;
-        velocidade = 10; // Inicia com 10%
-        direcao = 0;     // Inicia para frente
+        velocidade = 15;
+        direcao = 0;
         controleMotor(velocidade, direcao);
       } else {
-        Serial.println("Desligado");
         bip(2);
         Motor1.Stop();
         motordirecao = 0;
@@ -133,11 +138,9 @@ void processCommand(uint32_t code, bool isRepeat) {
       }
       break;
 
-    // Botao Velocidade 30%
-    case 0xA75852AD:
+    case 0xA75852AD: // Velocidade 30%
       if (status == 1) {
         if (velocidade != 30) {
-          Serial.println("Velocidade 30%");
           bip(5);
           velocidade = 30;
           controleMotor(velocidade, direcao);
@@ -145,90 +148,97 @@ void processCommand(uint32_t code, bool isRepeat) {
       }
       break;
 
-    // Botao Frente
-    case 0xBF4052AD:
+    case 0xBF4052AD: // Frente
       if (status == 1 && direcao == 1) {
-        Serial.println("Frente");
-        bip(5);
-        paraMotor();      // Para antes de inverter
-        delay(250);       // Pequena pausa para o motor assentar
-        direcao = 0;
-        velocidade = 20;  // Velocidade inicial ao mudar de direção
-        controleMotor(velocidade, direcao);
+        if (millis() - lastDirectionChangeMillis >= DIRECTION_CHANGE_DELAY) {
+          bip(5);
+          pararComSeguranca();
+          direcao = 0;
+          velocidade = 15;
+          controleMotor(velocidade, direcao);
+        } else {
+          bip(4);
+        }
       }
       break;
 
-    // Botao Ré
-    case 0xBE4152AD:
+    case 0xBE4152AD: // Ré
       if (status == 1 && direcao == 0) {
-        Serial.println("Ré");
-        bip(5);
-        paraMotor();      // Para antes de inverter
-        delay(250);       // Pequena pausa
-        direcao = 1;
-        velocidade = 20;  // Velocidade inicial ao mudar de direção
-        controleMotor(velocidade, direcao);
+        if (millis() - lastDirectionChangeMillis >= DIRECTION_CHANGE_DELAY) {
+          bip(5);
+          pararComSeguranca();
+          direcao = 1;
+          velocidade = 15;
+          controleMotor(velocidade, direcao);
+        } else {
+          bip(4);
+        }
       }
       break;
 
-    // Botao + Velocidade
-    case 0xF50A52AD:
+    case 0xF50A52AD: // + Velocidade
       if (status == 1) {
         if (velocidade < 100) {
-          Serial.println("+ Velocidade");
           bip(5);
-          velocidade += 10; // Aumenta em passos de 10%
-          if (velocidade > 100) velocidade = 100; // Trava em 100%
+          velocidade += 10;
+          if (velocidade > 100) velocidade = 100;
           controleMotor(velocidade, direcao);
-        } else {
-          Serial.println("!Velocidade Maxima já!");
-          bip(4);
-        }
+        } else bip(4);
       }
       break;
 
-    // Botao - Velocidade
-    case 0xF40B52AD:
+    case 0xF40B52AD: // - Velocidade
       if (status == 1) {
         if (velocidade > 0) {
-          Serial.println("- Velocidade");
           bip(5);
-          velocidade -= 10; // Diminui em passos de 10%
-          if (velocidade < 0) velocidade = 0; // Trava em 0%
+          velocidade -= 10;
+          if (velocidade < 0) velocidade = 0;
           controleMotor(velocidade, direcao);
-        } else {
-          Serial.println("!Velocidade Minima já!");
-          bip(4);
-        }
+        } else bip(4);
       }
       break;
-      
-    // Comandos do motor de direção (sem alteração)
-    case 0xBC4352AD: if (status == 1) { motordirecao = 1; Motor1.Forward(); Serial.println("Direita"); bip(5); lastDirSignalMillis = millis();} break;
-    case 0xBD4252AD: if (status == 1) { motordirecao = 2; Motor1.Backward(); Serial.println("Esquerda"); bip(5); lastDirSignalMillis = millis();} break;
+
+    case 0xBC4352AD: // Direita
+      if (status == 1) {
+        motordirecao = 1;
+        Motor1.Forward();
+        bip(5);
+        lastDirSignalMillis = millis();
+      }
+      break;
+
+    case 0xBD4252AD: // Esquerda
+      if (status == 1) {
+        motordirecao = 2;
+        Motor1.Backward();
+        bip(5);
+        lastDirSignalMillis = millis();
+      }
+      break;
   }
 }
 
-//-------------------- SETUP (ATUALIZADO) --------------------
+//-------------------- SETUP --------------------
 void setup() {
-  setPWMfrequency(0x02); // timer 0, 3.92KHz (mantido)
+  setPWMfrequency(0x02); // timer 0, 3.92KHz
   Serial.begin(9600);
   IrReceiver.begin(12);
 
   Motor1.Pinout(3, 11);
   Motor1.Speed(100);
 
-  // --- ALTERAÇÃO: Configura os novos pinos do motor de propulsão ---
   pinMode(MOTOR_PWM_PIN, OUTPUT);
-  pinMode(MOTOR_DIR_PIN, OUTPUT);
-  digitalWrite(MOTOR_DIR_PIN, LOW); // Começa com direção para frente
-  analogWrite(MOTOR_PWM_PIN, 0);    // Começa com motor parado
+  pinMode(MOTOR_DIR_FRENTE, OUTPUT);
+  pinMode(MOTOR_DIR_RE, OUTPUT);
+  digitalWrite(MOTOR_DIR_FRENTE, LOW);
+  digitalWrite(MOTOR_DIR_RE, LOW);
+  analogWrite(MOTOR_PWM_PIN, 0);
 
   pinMode(BUZZER_PIN, OUTPUT);
   bip(3);
 }
 
-//-------------------- LOOP (sem alterações) --------------------
+//-------------------- LOOP --------------------
 void loop() {
   if (IrReceiver.decode()) {
     uint32_t code = IrReceiver.decodedIRData.decodedRawData;
