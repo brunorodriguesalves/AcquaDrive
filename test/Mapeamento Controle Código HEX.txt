@@ -1,0 +1,10 @@
+| Botão no Controle | Código HEX   | Função no Código                | Observações                                     |
+| ----------------- | ------------ | ------------------------------- | ----------------------------------------------- |
+| **POWER**         | `0xE51A52AD` | Liga / Desliga                  | Alterna status do sistema e velocidade inicial. |
+| **PLAY/PAUSE**    | `0xA75852AD` | Velocidade nível 3 (30%)        | Só funciona se o sistema estiver ligado.        |
+| **PASTA +**       | `0xBF4052AD` | Muda direção para Frente        | Só funciona se estiver em Ré.                   |
+| **PASTA -**       | `0xBE4152AD` | Muda direção para Ré            | Só funciona se estiver em Frente.               |
+| **MAIS (+)**      | `0xF50A52AD` | Aumenta velocidade              | Até o limite de 10 níveis.                      |
+| **MENOS (-)**     | `0xF40B52AD` | Diminui velocidade              | Até o mínimo de 1 nível.                        |
+| **DIREITA**       | `0xBC4352AD` | Gira motor auxiliar para frente | Motor1.Forward().                               |
+| **ESQUERDA**      | `0xBD4252AD` | Gira motor auxiliar para trás   | Motor1.Backward().                              |
