@@ -88,7 +88,7 @@ void controleMotor(int percentVelocidade, int direcaoMotor) {
 // Para motor com pausa de segurança
 void pararComSeguranca() {
   controleMotor(0, direcao);
-  delay(1500); // Pausa física para proteger
+  delay(2000); // Pausa física para proteger
   lastDirectionChangeMillis = millis();
 }
 
@@ -113,13 +113,22 @@ void bip(int tp) {
 
 //-------------------- PROCESSAMENTO COMANDOS --------------------
 void processCommand(uint32_t code, bool isRepeat) {
+  // ---------------- REPETIÇÃO DE BOTÃO ----------------
   if (isRepeat) {
     if (motordirecao != 0) {
       lastDirSignalMillis = millis();
+
+      // Mantém motor de direção ativo enquanto botão está pressionado
+      if (motordirecao == 1) {
+        Motor1.Forward();
+      } else if (motordirecao == 2) {
+        Motor1.Backward();
+      }
     }
     return;
   }
 
+  // ---------------- COMANDOS NORMAIS ----------------
   switch (code) {
     case 0xE51A52AD: // Liga/Desliga
       if (status == 0) {
@@ -247,6 +256,7 @@ void loop() {
     IrReceiver.resume();
   }
 
+  // Soltou botão de direção → para motor
   if (motordirecao != 0 && (millis() - lastDirSignalMillis) > DIR_RELEASE_TIMEOUT) {
     Motor1.Stop();
     motordirecao = 0;
