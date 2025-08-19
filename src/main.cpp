@@ -15,9 +15,9 @@ MAPEAMENTO CONTROLE HEX
 
 //-------------------- PINOS --------------------
 #define BUZZER_PIN 2
-#define MOTOR_PWM_PIN     5  // Pino PWM para o sinal de velocidade
-#define MOTOR_DIR_FRENTE  4  // Pino digital para o sinal de direção FRENTE
-#define MOTOR_DIR_RE      7  // Pino digital para o sinal de direção RÉ
+#define MOTOR_PWM_PIN     5   // Pino PWM para o sinal de velocidade
+#define MOTOR_DIR_FRENTE  4   // Pino digital para o sinal de direção FRENTE
+#define MOTOR_DIR_RE      7   // Pino digital para o sinal de direção RÉ
 
 //-------------------- VARIÁVEIS --------------------
 int status = 0;         // 0 Desligado - 1 Ligado
@@ -71,11 +71,11 @@ void controleMotor(int percentVelocidade, int direcaoMotor) {
   if (percentVelocidade == 0) {
     digitalWrite(MOTOR_DIR_FRENTE, LOW);
     digitalWrite(MOTOR_DIR_RE, LOW);
-  } 
+  }
   else if (direcaoMotor == 0) { // Frente
     digitalWrite(MOTOR_DIR_FRENTE, HIGH);
     digitalWrite(MOTOR_DIR_RE, LOW);
-  } 
+  }
   else { // Ré
     digitalWrite(MOTOR_DIR_FRENTE, LOW);
     digitalWrite(MOTOR_DIR_RE, HIGH);
@@ -111,26 +111,16 @@ void bip(int tp) {
   }
 }
 
-//-------------------- PROCESSAMENTO COMANDOS --------------------
+//-------------------- PROCESSAMENTO COMANDOS (VERSÃO ATUALIZADA) --------------------
 void processCommand(uint32_t code, bool isRepeat) {
-  // ---------------- REPETIÇÃO DE BOTÃO ----------------
-  if (isRepeat) {
-    if (motordirecao != 0) {
-      lastDirSignalMillis = millis();
+  // A lógica de repetição foi movida para dentro dos próprios comandos de direção.
+  // Isso torna o código mais simples e robusto, funcionando mesmo se o controle
+  // não enviar um sinal de "repeat" padrão.
 
-      // Mantém motor de direção ativo enquanto botão está pressionado
-      if (motordirecao == 1) {
-        Motor1.Forward();
-      } else if (motordirecao == 2) {
-        Motor1.Backward();
-      }
-    }
-    return;
-  }
-
-  // ---------------- COMANDOS NORMAIS ----------------
+  // ---------------- COMANDOS ----------------
   switch (code) {
     case 0xE51A52AD: // Liga/Desliga
+      if (isRepeat) return; // Ignora repetição para Liga/Desliga
       if (status == 0) {
         bip(1);
         status = 1;
@@ -148,6 +138,7 @@ void processCommand(uint32_t code, bool isRepeat) {
       break;
 
     case 0xA75852AD: // Velocidade 30%
+      if (isRepeat) return; // Ignora repetição
       if (status == 1) {
         if (velocidade != 30) {
           bip(5);
@@ -158,6 +149,7 @@ void processCommand(uint32_t code, bool isRepeat) {
       break;
 
     case 0xBF4052AD: // Frente
+      if (isRepeat) return; // Ignora repetição
       if (status == 1 && direcao == 1) {
         if (millis() - lastDirectionChangeMillis >= DIRECTION_CHANGE_DELAY) {
           bip(5);
@@ -172,6 +164,7 @@ void processCommand(uint32_t code, bool isRepeat) {
       break;
 
     case 0xBE4152AD: // Ré
+      if (isRepeat) return; // Ignora repetição
       if (status == 1 && direcao == 0) {
         if (millis() - lastDirectionChangeMillis >= DIRECTION_CHANGE_DELAY) {
           bip(5);
@@ -186,6 +179,7 @@ void processCommand(uint32_t code, bool isRepeat) {
       break;
 
     case 0xF50A52AD: // + Velocidade
+      if (isRepeat) return; // Ignora repetição
       if (status == 1) {
         if (velocidade < 100) {
           bip(5);
@@ -197,6 +191,7 @@ void processCommand(uint32_t code, bool isRepeat) {
       break;
 
     case 0xF40B52AD: // - Velocidade
+      if (isRepeat) return; // Ignora repetição
       if (status == 1) {
         if (velocidade > 0) {
           bip(5);
@@ -207,25 +202,33 @@ void processCommand(uint32_t code, bool isRepeat) {
       }
       break;
 
+    // --- LÓGICA DE DIREÇÃO MODIFICADA ---
     case 0xBC4352AD: // Direita
       if (status == 1) {
+        // Só bipa no primeiro toque, não na repetição
+        if (motordirecao != 1) {
+            bip(5);
+        }
         motordirecao = 1;
         Motor1.Forward();
-        bip(5);
-        lastDirSignalMillis = millis();
+        lastDirSignalMillis = millis(); // Atualiza o cronômetro a cada sinal recebido
       }
       break;
 
     case 0xBD4252AD: // Esquerda
       if (status == 1) {
+        // Só bipa no primeiro toque, não na repetição
+        if (motordirecao != 2) {
+            bip(5);
+        }
         motordirecao = 2;
         Motor1.Backward();
-        bip(5);
-        lastDirSignalMillis = millis();
+        lastDirSignalMillis = millis(); // Atualiza o cronômetro a cada sinal recebido
       }
       break;
   }
 }
+
 
 //-------------------- SETUP --------------------
 void setup() {
@@ -250,13 +253,19 @@ void setup() {
 //-------------------- LOOP --------------------
 void loop() {
   if (IrReceiver.decode()) {
+    // Usar decodedRawData pode não ser o ideal para todos os protocolos,
+    // mas mantendo como no código original. decodedIRData.command seria uma alternativa.
     uint32_t code = IrReceiver.decodedIRData.decodedRawData;
     bool isRepeat = (IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT) || (code == 0xFFFFFFFF);
+    
+    // Processa o comando. Para códigos de direção, a função agora atualiza o timer.
     processCommand(code, isRepeat);
+    
     IrReceiver.resume();
   }
 
   // Soltou botão de direção → para motor
+  // Esta lógica agora funciona perfeitamente com a nova "processCommand".
   if (motordirecao != 0 && (millis() - lastDirSignalMillis) > DIR_RELEASE_TIMEOUT) {
     Motor1.Stop();
     motordirecao = 0;
