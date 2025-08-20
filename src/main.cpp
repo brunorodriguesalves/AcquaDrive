@@ -14,7 +14,7 @@ MAPEAMENTO CONTROLE HEX
 */
 
 //-------------------- PINOS --------------------
-#define BUZZER_PIN 2
+#define BUZZER_PIN 2          // Pinno digital para o sinal do BUZZER
 #define MOTOR_PWM_PIN     5   // Pino PWM para o sinal de velocidade
 #define MOTOR_DIR_FRENTE  4   // Pino digital para o sinal de direção FRENTE
 #define MOTOR_DIR_RE      7   // Pino digital para o sinal de direção RÉ
